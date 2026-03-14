@@ -7,22 +7,22 @@
     <style>
         :root { --primary: #0ea5e9; --bg: #0f172a; --accent: #10b981; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; margin: 0; }
-        .container { width: 100%; max-width: 650px; background: #1e293b; padding: 40px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); margin-top: 20px; }
+        .container { width: 100%; max-width: 650px; background: #1e293b; padding: 40px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); margin-top: 20px; position: relative; }
         h1 { text-align: center; font-size: 2.2rem; margin: 0; background: linear-gradient(to right, #38bdf8, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .status-area { text-align: center; margin: 20px 0; min-height: 50px; }
         #statusText { font-size: 0.9rem; color: #94a3b8; font-style: italic; }
         .card { background: #334155; padding: 20px; margin-bottom: 18px; border-radius: 16px; border-left: 4px solid var(--accent); animation: slideUp 0.5s ease-out forwards; }
         .card h3 { margin: 0 0 10px 0; color: #f1f5f9; font-size: 1.15rem; }
         .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
-        .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; margin-bottom: 8px; }
-        .settings-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #475569; cursor: pointer; font-size: 0.8rem; }
-        .settings-btn:hover { color: #94a3b8; }
+        .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
+        .settings-btn { position: absolute; top: 15px; right: 15px; background: #334155; border: 1px solid #475569; color: #94a3b8; cursor: pointer; font-size: 0.75rem; padding: 5px 10px; border-radius: 8px; }
+        .settings-btn:hover { background: #475569; color: white; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-<div class="container" style="position: relative;">
+<div class="container">
     <button class="settings-btn" onclick="resetKey()">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
     <div class="status-area">
@@ -32,7 +32,6 @@
 </div>
 
 <script>
-    // --- KEY MANAGEMENT ---
     let API_KEY = localStorage.getItem('daily_talk_gemini_key');
 
     function resetKey() {
@@ -42,7 +41,7 @@
 
     async function checkKey() {
         if (!API_KEY) {
-            const userKey = prompt("Bitte gib deinen Gemini API-Key ein:\n(Er wird nur lokal in deinem Browser gespeichert)");
+            const userKey = prompt("Bitte gib deinen Gemini API-Key ein:\n(Lokal gespeichert)");
             if (userKey) {
                 localStorage.setItem('daily_talk_gemini_key', userKey.trim());
                 API_KEY = userKey.trim();
@@ -53,7 +52,6 @@
         return true;
     }
 
-    // --- NEWS & AI LOGIK ---
     const SEARCH_QUERY = "Klimaschutz Erfolge OR soziale Gerechtigkeit Fortschritt OR Friedensinitiativen";
     const RSS_URL = `https://news.google.com/rss/search?q=${encodeURIComponent(SEARCH_QUERY)}&hl=de&gl=DE&ceid=DE:de`;
 
@@ -62,71 +60,78 @@
         const resultsDiv = document.getElementById('results');
 
         if (!await checkKey()) {
-            status.textContent = "Kein API-Key vorhanden. Bitte Seite neu laden.";
+            status.textContent = "Bitte Seite neu laden und Key eingeben.";
             return;
         }
 
-try {
-            // ... (Dein bisheriger Code bis zum aiRes fetch) ...
+        try {
+            status.textContent = "Verbinde mit Google KI...";
+            const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+            if (!modelRes.ok) throw new Error("API-Key ungültig oder abgelaufen.");
+            
+            const modelData = await modelRes.json();
+            const priorities = ['gemini-3-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            const models = modelData.models.map(m => m.name);
+            let found = priorities.find(p => models.some(m => m.includes(p))) || models[0].name;
+            const modelName = found.includes('/') ? found : `models/${found}`;
+
+            status.textContent = "Suche positive Nachrichten...";
+            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_URL)}`);
+            const rssData = await rssRes.json();
+            
+            if (!rssData.items || rssData.items.length === 0) throw new Error("Keine News gefunden.");
+            const headlines = rssData.items.slice(0, 12).map(i => i.title).join("\n");
+
+            status.textContent = "KI generiert Eisbrecher...";
+            const prompt = `Du bist ein konstruktiver Small-Talk-Experte. Erstelle aus diesen News 3-5 positive Eisbrecher.
+            REGEL: Nur positive Entwicklungen zu Klima, Frieden oder Sozialem.
+            Antworte NUR als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "GRUND"}]`;
 
             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt + "\n\nNews:\n" + headlines }] }] })
+                body: JSON.stringify({ 
+                    contents: [{ parts: [{ text: prompt + "\n\nNews:\n" + headlines }] }],
+                    safetySettings: [
+                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                    ]
+                })
             });
 
             const aiData = await aiRes.json();
 
-            // FEHLER-CHECK 1: Hat die API überhaupt Kandidaten geliefert?
-            if (!aiData.candidates || aiData.candidates.length === 0) {
-                // Prüfen, ob Sicherheitsfilter zugeschlagen haben
-                if (aiData.promptFeedback?.blockReason) {
-                    throw new Error(`Google hat die Anfrage blockiert: ${aiData.promptFeedback.blockReason}`);
-                }
-                throw new Error("Die KI hat keine Antwort generiert. Versuche es mit anderen News oder lade die Seite neu.");
+            // ABSICHERUNG gegen leere Antworten (der Fix für deinen Fehler)
+            if (!aiData.candidates || aiData.candidates.length === 0 || !aiData.candidates[0].content) {
+                throw new Error("Die KI konnte keine Antwort generieren (möglicherweise durch Filter blockiert).");
             }
 
-            // FEHLER-CHECK 2: Enthält der erste Kandidat Text?
-            const candidate = aiData.candidates[0];
-            if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0].text) {
-                // Oft ist hier der Grund "finishReason": "SAFETY"
-                if (candidate.finishReason === "SAFETY") {
-                    throw new Error("Antwort wegen Sicherheitsrichtlinien blockiert (Thema zu sensibel).");
-                }
-                throw new Error("Antwort-Struktur ungültig.");
-            }
-
-            const rawText = candidate.content.parts[0].text;
-            
-            // JSON sicher extrahieren
+            const rawText = aiData.candidates[0].content.parts[0].text;
             const jsonStart = rawText.indexOf('[');
             const jsonEnd = rawText.lastIndexOf(']') + 1;
             
-            if (jsonStart === -1 || jsonEnd === 0) {
-                throw new Error("Die KI hat kein gültiges JSON-Format gesendet.");
-            }
+            if (jsonStart === -1) throw new Error("Ungültiges Antwortformat der KI.");
 
-            const jsonStr = rawText.substring(jsonStart, jsonEnd);
-            const icebreakers = JSON.parse(jsonStr);
+            const icebreakers = JSON.parse(rawText.substring(jsonStart, jsonEnd));
 
-            // ... (Rest des Codes zum Anzeigen der Karten) ...
             status.style.display = 'none';
             resultsDiv.innerHTML = ''; 
             icebreakers.forEach((item, index) => {
                 setTimeout(() => {
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.style.opacity = '1';
                     div.innerHTML = `<span class="tag">${item.category}</span><h3>${item.title}</h3><p>${item.explanation}</p>`;
                     resultsDiv.appendChild(div);
                 }, index * 200);
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="background:#450a0a; color:#fca5a5; padding:15px; border-radius:12px; border:1px solid #7f1d1d; text-align:left;">
-                <strong>Diagnose:</strong><br>${err.message}
-            </div>`;
+            status.innerHTML = `<div style="color:#fca5a5; padding:10px; border:1px solid #7f1d1d; border-radius:10px; text-align:left;">
+                <strong>Fehler:</strong> ${err.message}</div>`;
         }
+    }
 
     window.onload = startApp;
 </script>
