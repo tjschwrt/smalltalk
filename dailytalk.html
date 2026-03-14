@@ -66,30 +66,8 @@
             return;
         }
 
-        try {
-            // 1. Modell-Check
-            status.textContent = "Verbinde mit Google KI...";
-            const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
-            
-            if (!modelRes.ok) throw new Error("API-Key ungültig. Klicke oben auf 'Key ändern'.");
-            
-            const modelData = await modelRes.json();
-            const priorities = ['gemini-3-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-            const models = modelData.models.map(m => m.name);
-            let found = priorities.find(p => models.some(m => m.includes(p))) || models[0].name;
-            const modelName = found.includes('/') ? found : `models/${found}`;
-
-            // 2. News laden
-            status.textContent = "Suche positive Nachrichten...";
-            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_URL)}`);
-            const rssData = await rssRes.json();
-            const headlines = rssData.items.slice(0, 12).map(i => i.title).join("\n");
-
-            // 3. KI Analyse
-            status.textContent = "KI destilliert das Beste heraus...";
-            const prompt = `Du bist ein konstruktiver Small-Talk-Experte. Wähle aus den News 3-5 positive Entwicklungen zu Klima, Frieden oder Sozialem.
-            Erstelle daraus Eisbrecher für sympathischen Small-Talk.
-            Antworte NUR als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "GRUND"}]`;
+try {
+            // ... (Dein bisheriger Code bis zum aiRes fetch) ...
 
             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${API_KEY}`, {
                 method: 'POST',
@@ -98,28 +76,57 @@
             });
 
             const aiData = await aiRes.json();
-            const rawText = aiData.candidates[0].content.parts[0].text;
-            const icebreakers = JSON.parse(rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1));
 
+            // FEHLER-CHECK 1: Hat die API überhaupt Kandidaten geliefert?
+            if (!aiData.candidates || aiData.candidates.length === 0) {
+                // Prüfen, ob Sicherheitsfilter zugeschlagen haben
+                if (aiData.promptFeedback?.blockReason) {
+                    throw new Error(`Google hat die Anfrage blockiert: ${aiData.promptFeedback.blockReason}`);
+                }
+                throw new Error("Die KI hat keine Antwort generiert. Versuche es mit anderen News oder lade die Seite neu.");
+            }
+
+            // FEHLER-CHECK 2: Enthält der erste Kandidat Text?
+            const candidate = aiData.candidates[0];
+            if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0].text) {
+                // Oft ist hier der Grund "finishReason": "SAFETY"
+                if (candidate.finishReason === "SAFETY") {
+                    throw new Error("Antwort wegen Sicherheitsrichtlinien blockiert (Thema zu sensibel).");
+                }
+                throw new Error("Antwort-Struktur ungültig.");
+            }
+
+            const rawText = candidate.content.parts[0].text;
+            
+            // JSON sicher extrahieren
+            const jsonStart = rawText.indexOf('[');
+            const jsonEnd = rawText.lastIndexOf(']') + 1;
+            
+            if (jsonStart === -1 || jsonEnd === 0) {
+                throw new Error("Die KI hat kein gültiges JSON-Format gesendet.");
+            }
+
+            const jsonStr = rawText.substring(jsonStart, jsonEnd);
+            const icebreakers = JSON.parse(jsonStr);
+
+            // ... (Rest des Codes zum Anzeigen der Karten) ...
             status.style.display = 'none';
+            resultsDiv.innerHTML = ''; 
             icebreakers.forEach((item, index) => {
                 setTimeout(() => {
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.innerHTML = `
-                        <span class="tag">${item.category}</span>
-                        <h3>${item.title}</h3>
-                        <p>${item.explanation}</p>
-                    `;
+                    div.style.opacity = '1';
+                    div.innerHTML = `<span class="tag">${item.category}</span><h3>${item.title}</h3><p>${item.explanation}</p>`;
                     resultsDiv.appendChild(div);
                 }, index * 200);
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5; padding:10px; border:1px solid #7f1d1d; border-radius:10px;">
-                <strong>Fehler:</strong> ${err.message}</div>`;
+            status.innerHTML = `<div style="background:#450a0a; color:#fca5a5; padding:15px; border-radius:12px; border:1px solid #7f1d1d; text-align:left;">
+                <strong>Diagnose:</strong><br>${err.message}
+            </div>`;
         }
-    }
 
     window.onload = startApp;
 </script>
