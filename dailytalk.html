@@ -48,38 +48,69 @@
         btn.disabled = true;
         resultsDiv.innerHTML = '';
         status.textContent = "Analysiere News für tiefgründige Gespräche...";
+async function startApp() {
+        if (!API_KEY) {
+            const userKey = prompt("Bitte gib deinen Gemini API-Key ein:");
+            if (!userKey) return;
+            API_KEY = userKey.trim();
+            localStorage.setItem('daily_talk_gemini_key', API_KEY);
+        }
+
+        const status = document.getElementById('statusText');
+        const resultsDiv = document.getElementById('results');
+        const btn = document.getElementById('btnLoad');
+
+        btn.disabled = true;
+        resultsDiv.innerHTML = '';
+        status.textContent = "Prüfe Verbindung zu Google...";
 
         try {
+            // 1. Liste Modelle abrufen
             const modelListRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
             const modelListData = await modelListRes.json();
+            
+            // SICHERHEITS-CHECK: Wenn 'models' fehlt, gab es einen API-Fehler
+            if (!modelListData.models) {
+                if (modelListData.error) {
+                    throw new Error(`API Fehler: ${modelListData.error.message}`);
+                }
+                throw new Error("Konnte keine Modell-Liste abrufen. Key prüfen!");
+            }
+
             const usableModels = modelListData.models.filter(m => m.supportedGenerationMethods.includes("generateContent"));
             const priorities = ['gemini-2.0-flash', 'gemini-1.5-flash'];
             let bestModel = usableModels.find(m => priorities.some(p => m.name.includes(p))) || usableModels[0];
             
+            // 2. News laden
+            status.textContent = "Hole News von goodnews.eu...";
             const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
+            
+            if (!rssData.items) throw new Error("News-Feed konnte nicht geladen werden.");
             const headlines = rssData.items.slice(0, 5).map(i => i.title).join("\n");
 
-            const prompt = `Du bist ein Kommunikationsexperte. Erstelle aus diesen News 3 ausführliche Small-Talk Eisbrecher.
-            Jeder Eisbrecher muss Kontext liefern, damit man ein echtes Gespräch führen kann.
-            
-            Formatierung:
-            - category: Kurzes Thema
-            - title: Ein lockerer Einstiegssatz
-            - explanation: Liefere Hintergrund-Details (2-3 Sätze). Was genau ist passiert? Warum ist das wichtig?
-            - bridge: Eine Frage oder ein Gedanke, um das Gegenüber einzubinden.
-            
-            Antworte NUR als JSON-Array: [{"category": "..", "title": "..", "explanation": "..", "bridge": ".."}] \n\nNews:\n${headlines}`;
-
+            // 3. KI Anfrage
+            status.textContent = `KI bereitet Gespräch vor...`;
             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                body: JSON.stringify({ 
+                    contents: [{ parts: [{ text: `Du bist Kommunikationsexperte. Erstelle aus diesen News 3 ausführliche Small-Talk Eisbrecher.
+                    Format: category (Thema), title (Einstieg), explanation (2-3 Sätze Kontext), bridge (Frage/Gedanke).
+                    Antworte NUR als JSON-Array: [{"category": "..", "title": "..", "explanation": "..", "bridge": ".."}] \n\nNews:\n${headlines}` }] }]
+                })
             });
 
             const aiData = await aiRes.json();
+            
+            // SICHERHEITS-CHECK: Falls die KI-Antwort gefiltert wurde
+            if (!aiData.candidates || aiData.candidates.length === 0) {
+                throw new Error("Inhalt wurde von den Google-Sicherheitsfiltern blockiert.");
+            }
+
             const rawText = aiData.candidates[0].content.parts[0].text;
-            const icebreakers = JSON.parse(rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1));
+            const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
+            const icebreakers = JSON.parse(jsonStr);
 
             status.style.display = 'none';
             icebreakers.forEach((item, index) => {
@@ -97,7 +128,11 @@
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5;">Fehler: ${err.message}</div>`;
+            status.innerHTML = `<div style="color:#fca5a5; background:rgba(239,68,68,0.1); padding:15px; border-radius:10px; border:1px solid #ef4444;">
+                <strong>Oje!</strong><br>${err.message}<br>
+                <button onclick="location.reload()" style="margin-top:10px; background:#ef4444; border:none; color:white; padding:5px 10px; border-radius:5px; cursor:pointer;">Neu laden</button>
+            </div>`;
+            console.error(err);
         } finally {
             btn.disabled = false;
         }
