@@ -15,13 +15,10 @@
         .card h3 { margin: 0 0 10px 0; color: #f1f5f9; font-size: 1.15rem; }
         .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
         .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
-        
-        /* Zusatz-Kontext Styling */
         .context-box { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #475569; font-size: 0.9rem; animation: fadeIn 1s ease-in; }
         .context-item { margin-bottom: 8px; }
         .context-label { color: var(--primary); font-weight: bold; font-size: 0.75rem; text-transform: uppercase; display: block; }
         .bridge-text { font-style: italic; color: #fbbf24; }
-
         .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; }
         .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -31,22 +28,27 @@
 <body>
 
 <div class="container">
-    <button onclick="localStorage.removeItem('daily_talk_gemini_key'); location.reload();" style="position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem;">Key ändern ⚙️</button>
+    <button onclick="resetKey()" style="position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem;">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
-    <div class="status-area"><div id="statusText">Initialisiere...</div></div>
+    <div class="status-area"><div id="statusText">Bereit zum Starten...</div></div>
     <div id="results"></div>
     <button id="btnLoad" class="refresh-btn" onclick="startApp()">Inspiration laden</button>
 </div>
 
 <script>
-    let API_KEY = localStorage.getItem('daily_talk_gemini_key');
+    function resetKey() {
+        localStorage.removeItem('daily_talk_gemini_key');
+        location.reload();
+    }
 
     async function startApp() {
-        if (!API_KEY) {
-            const userKey = prompt("Bitte gib deinen Gemini API-Key ein:");
-            if (!userKey) return;
-            API_KEY = userKey.trim();
-            localStorage.setItem('daily_talk_gemini_key', API_KEY);
+        let apiKey = localStorage.getItem('daily_talk_gemini_key');
+        
+        // API Key Abfrage erzwingen
+        if (!apiKey) {
+            apiKey = prompt("Bitte gib deinen Gemini API-Key ein:");
+            if (!apiKey) return;
+            localStorage.setItem('daily_talk_gemini_key', apiKey.trim());
         }
 
         const status = document.getElementById('statusText');
@@ -55,80 +57,98 @@
 
         btn.disabled = true;
         resultsDiv.innerHTML = '';
-        status.textContent = "Hole aktuelle News...";
+        status.textContent = "Hole aktuelle News von GoodNews.eu...";
 
         try {
             // 1. News laden
             const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
-            if (!rssData.items) throw new Error("Feed konnte nicht geladen werden.");
+            if (!rssData.items) throw new Error("News-Feed konnte nicht geladen werden.");
             
-            const newsItems = rssData.items.slice(0, 3); // Wir fokussieren uns auf 3 für bessere Qualität
+            const newsItems = rssData.items.slice(0, 3);
             const headlines = newsItems.map(i => i.title).join("\n");
 
-            // 2. Basis-Anzeige sofort erstellen (Sicherheitsnetz)
+            // 2. Sofortige Anzeige der Schlagzeilen
             newsItems.forEach((item, index) => {
                 const div = document.createElement('div');
                 div.className = 'card';
                 div.id = `card-${index}`;
-                div.innerHTML = `<span class="tag">News</span><h3>${item.title}</h3><p>Lade Kontext...</p>`;
+                div.innerHTML = `<span class="tag">News</span><h3>${item.title}</h3><p id="loading-${index}">Analysiere Kontext...</p>`;
                 div.style.animationDelay = `${index * 0.1}s`;
                 resultsDiv.appendChild(div);
             });
 
-            // 3. Modell finden
-            status.textContent = "KI wird für Deep-Talk vorbereitet...";
-            const modelListRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+            // 3. KI Modell-Check
+            status.textContent = "KI berechnet Details (Aufhänger, Fakten, Brücke)...";
+            const modelListRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
             const modelListData = await modelListRes.json();
+            
+            if (!modelListData.models) throw new Error("Ungültiger API-Key oder Google API Limit erreicht.");
+
             const usableModels = modelListData.models.filter(m => m.supportedGenerationMethods.includes("generateContent"));
             const priorities = ['gemini-2.0-flash', 'gemini-1.5-flash'];
             let bestModel = usableModels.find(m => priorities.some(p => m.name.includes(p))) || usableModels[0];
 
-            // 4. Kontext-Generierung
-            const prompt = `Analysiere diese News und erstelle für jede einen Gesprächs-Kontext.
-            News:
+            // 4. KI Kontext-Anfrage
+            const promptStr = `Analysiere diese News-Schlagzeilen einzeln und erstelle für jede einen spannenden Smalltalk-Kontext.
+            Schlagzeilen:
             ${headlines}
 
-            Antworte STRENG NUR als JSON-Array mit diesem Format:
-            [{"aufhaenger": "lockerer Einstiegssatz", "detail": "Spannendes 'Did-you-know' Fakt", "bruecke": "Frage ans Gegenüber"}]`;
+            Antworte STRENG NUR als valides JSON-Array mit exakt diesem Aufbau:
+            [{"aufhaenger": "Lockerer Einstiegssatz", "detail": "Ein tiefgründiger Fakt oder Hintergrund-Info", "bruecke": "Eine offene Frage an das Gegenüber"}]`;
 
-            const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${API_KEY}`, {
+            const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                body: JSON.stringify({ contents: [{ parts: [{ text: promptStr }] }] })
             });
 
             const aiData = await aiRes.json();
-            if (aiData.candidates) {
+            
+            if (aiData.candidates && aiData.candidates[0].content.parts[0].text) {
                 const rawText = aiData.candidates[0].content.parts[0].text;
-                const contextArray = JSON.parse(rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1));
+                const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
+                const contextArray = JSON.parse(jsonStr);
 
-                // 5. Karten mit Kontext aktualisieren
+                // 5. Karten mit Deep-Context füllen
                 contextArray.forEach((ctx, index) => {
                     const card = document.getElementById(`card-${index}`);
-                    if (card) {
-                        card.querySelector('p').style.display = 'none'; // "Lade..." entfernen
+                    const loadingText = document.getElementById(`loading-${index}`);
+                    if (card && loadingText) {
+                        loadingText.remove();
                         const contextDiv = document.createElement('div');
                         contextDiv.className = 'context-box';
                         contextDiv.innerHTML = `
-                            <div class="context-item"><span class="context-label">Aufhänger</span>${ctx.aufhaenger}</div>
+                            <div class="context-item"><span class="context-label">Der Aufhänger</span>${ctx.aufhaenger}</div>
                             <div class="context-item"><span class="context-label">Das Detail</span>${ctx.detail}</div>
-                            <div class="context-item"><span class="context-label">Brücke</span><span class="bridge-text">${ctx.bruecke}</span></div>
+                            <div class="context-item"><span class="context-label">Die Brücke</span><span class="bridge-text">${ctx.bruecke}</span></div>
                         `;
                         card.appendChild(contextDiv);
                     }
                 });
-                status.textContent = "Kontext erfolgreich hinzugefügt.";
+                status.textContent = "Alle Infos geladen!";
+            } else {
+                throw new Error("KI konnte keinen Kontext generieren.");
             }
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5; font-size: 0.8rem;">Fehler: ${err.message}</div>`;
+            status.innerHTML = `<div style="color:#fca5a5;">Fehler: ${err.message}</div>`;
+            // Falls es am Key lag, diesen löschen um Neueingabe zu ermöglichen
+            if(err.message.includes("Key")) localStorage.removeItem('daily_talk_gemini_key');
         } finally {
             btn.disabled = false;
         }
     }
 
-    window.onload = () => { if(API_KEY) startApp(); };
+    // Beim Laden der Seite prüfen wir nur, ob wir starten können
+    window.onload = () => {
+        const key = localStorage.getItem('daily_talk_gemini_key');
+        if (key) {
+            startApp();
+        } else {
+            document.getElementById('statusText').textContent = "Bitte klicke auf 'Inspiration laden', um deinen Key einzugeben.";
+        }
+    };
 </script>
 </body>
 </html>
