@@ -37,14 +37,15 @@
 
 <script>
     function resetKey() {
-        localStorage.removeItem('daily_talk_gemini_key');
-        location.reload();
+        if(confirm("API-Key wirklich löschen?")) {
+            localStorage.removeItem('daily_talk_gemini_key');
+            location.reload();
+        }
     }
 
     async function startApp() {
         let apiKey = localStorage.getItem('daily_talk_gemini_key');
         
-        // API Key Abfrage erzwingen
         if (!apiKey) {
             apiKey = prompt("Bitte gib deinen Gemini API-Key ein:");
             if (!apiKey) return;
@@ -57,7 +58,7 @@
 
         btn.disabled = true;
         resultsDiv.innerHTML = '';
-        status.textContent = "Hole aktuelle News von GoodNews.eu...";
+        status.textContent = "Hole aktuelle News...";
 
         try {
             // 1. News laden
@@ -68,34 +69,35 @@
             const newsItems = rssData.items.slice(0, 3);
             const headlines = newsItems.map(i => i.title).join("\n");
 
-            // 2. Sofortige Anzeige der Schlagzeilen
+            // 2. Sofortige Anzeige
             newsItems.forEach((item, index) => {
                 const div = document.createElement('div');
                 div.className = 'card';
                 div.id = `card-${index}`;
-                div.innerHTML = `<span class="tag">News</span><h3>${item.title}</h3><p id="loading-${index}">Analysiere Kontext...</p>`;
+                div.innerHTML = `<span class="tag">News</span><h3>${item.title}</h3><p id="loading-${index}" style="color: #64748b; font-style: italic;">Analysiere Kontext... ✨</p>`;
                 div.style.animationDelay = `${index * 0.1}s`;
                 resultsDiv.appendChild(div);
             });
 
-            // 3. KI Modell-Check
-            status.textContent = "KI berechnet Details (Aufhänger, Fakten, Brücke)...";
+            // 3. Modell-Check
+            status.textContent = "KI wird für Deep-Talk vorbereitet...";
             const modelListRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
             const modelListData = await modelListRes.json();
             
-            if (!modelListData.models) throw new Error("Ungültiger API-Key oder Google API Limit erreicht.");
+            if (!modelListData.models) throw new Error("API-Key ungültig oder Limit erreicht.");
 
             const usableModels = modelListData.models.filter(m => m.supportedGenerationMethods.includes("generateContent"));
-            const priorities = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+            const priorities = ['gemini-1.5-flash', 'gemini-2.0-flash'];
             let bestModel = usableModels.find(m => priorities.some(p => m.name.includes(p))) || usableModels[0];
 
             // 4. KI Kontext-Anfrage
-            const promptStr = `Analysiere diese News-Schlagzeilen einzeln und erstelle für jede einen spannenden Smalltalk-Kontext.
+            status.textContent = "Erstelle Gesprächs-Kontext...";
+            const promptStr = `Analysiere diese Schlagzeilen und erstelle für jede ein JSON-Objekt.
             Schlagzeilen:
             ${headlines}
 
-            Antworte STRENG NUR als valides JSON-Array mit exakt diesem Aufbau:
-            [{"aufhaenger": "Lockerer Einstiegssatz", "detail": "Ein tiefgründiger Fakt oder Hintergrund-Info", "bruecke": "Eine offene Frage an das Gegenüber"}]`;
+            Format (Array):
+            [{"aufhaenger": "Einstieg", "detail": "Fakt", "bruecke": "Frage"}]`;
 
             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${apiKey}`, {
                 method: 'POST',
@@ -107,10 +109,17 @@
             
             if (aiData.candidates && aiData.candidates[0].content.parts[0].text) {
                 const rawText = aiData.candidates[0].content.parts[0].text;
-                const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
+                
+                // FEHLERTOLERANTES JSON-PARSING
+                const startIdx = rawText.indexOf('[');
+                const endIdx = rawText.lastIndexOf(']') + 1;
+                
+                if (startIdx === -1 || endIdx === 0) throw new Error("KI hat kein gültiges JSON geliefert.");
+                
+                const jsonStr = rawText.substring(startIdx, endIdx);
                 const contextArray = JSON.parse(jsonStr);
 
-                // 5. Karten mit Deep-Context füllen
+                // 5. Karten füllen
                 contextArray.forEach((ctx, index) => {
                     const card = document.getElementById(`card-${index}`);
                     const loadingText = document.getElementById(`loading-${index}`);
@@ -126,29 +135,26 @@
                         card.appendChild(contextDiv);
                     }
                 });
-                status.textContent = "Alle Infos geladen!";
+                status.textContent = "Gesprächs-Futter ist bereit!";
             } else {
-                throw new Error("KI konnte keinen Kontext generieren.");
+                throw new Error("KI-Antwort war leer.");
             }
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5;">Fehler: ${err.message}</div>`;
-            // Falls es am Key lag, diesen löschen um Neueingabe zu ermöglichen
-            if(err.message.includes("Key")) localStorage.removeItem('daily_talk_gemini_key');
+            console.error(err);
+            status.innerHTML = `<div style="color:#fca5a5;">Fehler beim Kontext: ${err.message}</div>`;
+            // Wenn der Kontext-Teil fehlschlägt, lassen wir die News stehen, 
+            // entfernen aber das "Lade..." bei allen Karten
+            for(let i=0; i<5; i++) {
+                const l = document.getElementById(`loading-${i}`);
+                if(l) l.textContent = "Kontext aktuell nicht verfügbar.";
+            }
         } finally {
             btn.disabled = false;
         }
     }
 
-    // Beim Laden der Seite prüfen wir nur, ob wir starten können
-    window.onload = () => {
-        const key = localStorage.getItem('daily_talk_gemini_key');
-        if (key) {
-            startApp();
-        } else {
-            document.getElementById('statusText').textContent = "Bitte klicke auf 'Inspiration laden', um deinen Key einzugeben.";
-        }
-    };
+    window.onload = () => { if(localStorage.getItem('daily_talk_gemini_key')) startApp(); };
 </script>
 </body>
 </html>
