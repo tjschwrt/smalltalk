@@ -33,90 +33,79 @@
 <script>
     const API_KEY = 'AIzaSyCRYqi7ItekQoX-wMB35J2j8on_u0g4a_o'; // <-- Check hier nochmal auf Leerzeichen!
     
-    const SEARCH_QUERY = "Klimaschutz Erfolge OR soziale Gerechtigkeit Fortschritt OR Friedensinitiativen OR positive Nachrichten OR Innovation Nachhaltigkeit";
-    const RSS_URL = `https://news.google.com/rss/search?q=${encodeURIComponent(SEARCH_QUERY)}&hl=de&gl=DE&ceid=DE:de`;
-
     async function startApp() {
         const status = document.getElementById('statusText');
         const resultsDiv = document.getElementById('results');
 
         try {
-            // Kleiner Delay, damit der Browser bereit ist
-            await new Promise(r => setTimeout(r, 500));
-
-            // 1. Modell-Check
-            status.textContent = "Suche bestes Modell";
+            status.textContent = "Verbinde mit Google KI...";
+            
+            // 1. Modell-Check mit detaillierter Fehlerausgabe
             const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
             
-            if (!modelRes.ok) throw new Error("API-Key ungültig oder Google-Dienst nicht erreichbar.");
-            
-            const modelData = await modelRes.json();
-            const priorities = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-            const models = modelData.models.map(m => m.name);
-            let found = priorities.find(p => models.some(m => m.includes(p))) || models[0];
-            const modelUrl = `https://generativelanguage.googleapis.com/v1beta/${found.includes('/') ? found : 'models/'+found}:generateContent`;
-
-            // 2. News laden
-            status.textContent = "Scanne globale News nach Fortschritten";
-            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_URL)}`);
-            const rssData = await rssRes.json();
-            
-            if (!rssData.items || rssData.items.length === 0) {
-                throw new Error("News-Feed konnte nicht geladen werden. Bitte Seite neu laden.");
+            if (!modelRes.ok) {
+                const errorData = await modelRes.json();
+                const reason = errorData.error ? errorData.error.message : "Unbekannter Fehler";
+                throw new Error(`Google sagt (${modelRes.status}): ${reason}`);
             }
             
-            const headlines = rssData.items.slice(0, 15).map(i => i.title).join("\n");
+            const modelData = await modelRes.json();
+            const priorities = ['gemini-3-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            const models = modelData.models.map(m => m.name);
+            let found = priorities.find(p => models.some(m => m.includes(p))) || models[0].name;
+            
+            // WICHTIG: Korrekte URL-Formatierung für v1beta
+            const modelName = found.includes('/') ? found : `models/${found}`;
+            const modelUrl = `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${API_KEY}`;
 
-            // 3. KI Analyse
-            status.textContent = "Erstelle inspirierende Eisbrecher";
-            const prompt = `Du bist ein konstruktiver Small-Talk-Experte. Erstelle basierend auf diesen News 3-5 Eisbrecher.
-            REGEL: Wähle NUR positive Entwicklungen zu Klima, Frieden, Sozialem oder Kurioses. Ignoriere Negatives.
-            Antworte NUR als JSON-Array: [{"category": "THEMA", "title": "Eisbrecher", "explanation": "Erklärung"}]`;
+            // 2. News laden
+            status.textContent = "Hole inspirierende Nachrichten...";
+            const search = encodeURIComponent("Klimaschutz Erfolge OR soziale Gerechtigkeit Fortschritt OR Frieden");
+            const rssUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://news.google.com/rss/search?q='+search+'&hl=de&gl=DE&ceid=DE:de')}`;
+            
+            const rssRes = await fetch(rssUrl);
+            const rssData = await rssRes.json();
+            const headlines = rssData.items.slice(0, 10).map(i => i.title).join("\n");
 
-            const aiRes = await fetch(`${modelUrl}?key=${API_KEY}`, {
+            // 3. KI Generierung
+            status.textContent = "KI erstellt Eisbrecher...";
+            const prompt = "Erstelle aus diesen News 3-5 positive Small-Talk Eisbrecher zu Klima/Frieden/Soziales. Antworte NUR als JSON-Array: [{\"category\": \"TAG\", \"title\": \"SATZ\", \"explanation\": \"GRUND\"}]";
+
+            const aiRes = await fetch(modelUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt + "\n\nSchlagzeilen:\n" + headlines }] }] })
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt + "\n\nNews:\n" + headlines }] }] })
             });
 
             const aiData = await aiRes.json();
-            if (aiData.error) throw new Error("Gemini Fehler: " + aiData.error.message);
+            if (aiData.error) throw new Error("KI Fehler: " + aiData.error.message);
 
             const rawText = aiData.candidates[0].content.parts[0].text;
             const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-            if (!jsonMatch) throw new Error("KI-Antwort konnte nicht gelesen werden.");
-            
             const icebreakers = JSON.parse(jsonMatch[0]);
 
             status.style.display = 'none';
-            resultsDiv.innerHTML = ''; // Vorherige Ergebnisse leeren
+            resultsDiv.innerHTML = ''; 
 
             icebreakers.forEach((item, index) => {
                 setTimeout(() => {
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.style.opacity = '1'; // Sofort sichtbar machen nach Animation
-                    div.innerHTML = `
-                        <span class="tag">${item.category}</span>
-                        <h3>${item.title}</h3>
-                        <p>${item.explanation}</p>
-                    `;
+                    div.style.opacity = '1';
+                    div.innerHTML = `<span class="tag">${item.category}</span><h3>${item.title}</h3><p>${item.explanation}</p>`;
                     resultsDiv.appendChild(div);
                 }, index * 200);
             });
 
         } catch (err) {
-            status.innerHTML = `<span style="color:#fca5a5"><strong>Hoppla:</strong> ${err.message}</span>`;
-            console.error("Detaillierter Fehler:", err);
+            status.innerHTML = `<div class="error-box" style="background:#450a0a; color:#fca5a5; padding:15px; border-radius:12px; border:1px solid #7f1d1d;">
+                <strong>Diagnose:</strong><br>${err.message}
+            </div>`;
+            console.error(err);
         }
     }
 
-    // Sicherer Start
-    if (document.readyState === 'complete') {
-        startApp();
-    } else {
-        window.addEventListener('load', startApp);
-    }
+    window.onload = startApp;
 </script>
 </body>
 </html>
