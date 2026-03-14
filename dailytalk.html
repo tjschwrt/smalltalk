@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Talk - Smart Context</title>
+    <title>Daily Talk - Smart Context Edition</title>
     <style>
         :root { --primary: #0ea5e9; --bg: #0f172a; --accent: #10b981; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; margin: 0; }
@@ -14,12 +14,18 @@
         .card { background: #334155; padding: 20px; margin-bottom: 18px; border-radius: 16px; border-left: 4px solid var(--accent); animation: slideUp 0.5s ease-out forwards; opacity: 0; }
         .card h3 { margin: 0 0 10px 0; color: #f1f5f9; font-size: 1.15rem; }
         .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
+        
         .context-box { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #475569; font-size: 0.9rem; animation: fadeIn 0.8s ease-in; }
-        .context-item { margin-bottom: 8px; line-height: 1.4; }
+        .context-item { margin-bottom: 10px; line-height: 1.5; color: #cbd5e1; }
         .context-label { color: var(--primary); font-weight: bold; font-size: 0.75rem; text-transform: uppercase; display: block; margin-bottom: 2px; }
         .bridge-text { font-style: italic; color: #fbbf24; }
-        .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; }
+        
+        .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; font-size: 1rem; transition: 0.2s; }
+        .refresh-btn:hover { background: #0284c7; }
         .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
+        
+        .settings-link { position: absolute; top: 15px; right: 20px; color: #475569; font-size: 0.7rem; cursor: pointer; text-decoration: underline; background: none; border: none; }
+
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
@@ -27,16 +33,16 @@
 <body>
 
 <div class="container">
-    <button onclick="resetKey()" style="position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem; text-decoration: underline;">Key ändern ⚙️</button>
+    <button class="settings-link" onclick="resetKey()">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
-    <div class="status-area"><div id="statusText">Bereit für gute Nachrichten?</div></div>
+    <div class="status-area"><div id="statusText">Bereit für News?</div></div>
     <div id="results"></div>
     <button id="btnLoad" class="refresh-btn" onclick="startApp()">Inspiration laden</button>
 </div>
 
 <script>
     function resetKey() {
-        if(confirm("Key wirklich löschen?")) {
+        if(confirm("API-Key löschen?")) {
             localStorage.removeItem('daily_talk_gemini_key');
             location.reload();
         }
@@ -59,29 +65,33 @@
         status.textContent = "Hole News von GoodNews.eu...";
 
         try {
-            // 1. News holen
+            // 1. News via RSS holen
             const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
+            if (!rssData.items) throw new Error("Feed konnte nicht geladen werden.");
+            
             const newsItems = rssData.items.slice(0, 3);
 
-            // 2. Sofort anzeigen
+            // 2. News-Karten sofort anzeigen
             newsItems.forEach((item, index) => {
                 const div = document.createElement('div');
                 div.className = 'card';
                 div.id = `card-${index}`;
-                div.innerHTML = `<span class="tag">News</span><h3>${item.title}</h3><div id="ctx-${index}" style="font-size:0.85rem; color:#94a3b8; font-style:italic;">Analysiere Kontext... ✨</div>`;
+                div.innerHTML = `
+                    <span class="tag">News</span>
+                    <h3>${item.title}</h3>
+                    <div id="ctx-${index}" style="font-size:0.85rem; color:#64748b; font-style:italic;">Analysiere Kontext... ✨</div>
+                `;
                 div.style.animationDelay = `${index * 0.1}s`;
                 resultsDiv.appendChild(div);
             });
 
-            status.textContent = "KI erstellt Gesprächsstoff...";
+            status.textContent = "News geladen. KI generiert Gesprächsstoff...";
 
-            // 3. Für jede News einzeln Kontext laden (stabiler!)
-            for (let i = 0; i < newsItems.length; i++) {
-                loadContextForCard(newsItems[i].title, i, apiKey);
-            }
-
-            status.textContent = "News geladen. Kontext folgt...";
+            // 3. Für jede News einzeln Kontext laden (Parallel)
+            newsItems.forEach((item, i) => {
+                loadContext(item.title, i, apiKey);
+            });
 
         } catch (err) {
             status.textContent = "Fehler: " + err.message;
@@ -90,41 +100,53 @@
         }
     }
 
-    async function loadContextForCard(headline, index, key) {
+    async function loadContext(headline, index, key) {
         const container = document.getElementById(`ctx-${index}`);
         try {
-            const prompt = `Erstelle einen Smalltalk-Kontext zu dieser News: "${headline}". 
-            Antworte NUR als JSON: {"aufhaenger": "Satz", "detail": "Fakt", "bruecke": "Frage"}`;
+            const promptStr = `Du bist ein Kommunikationsexperte. Erstelle einen freundlichen Smalltalk-Kontext zu dieser News: "${headline}". 
+            Antworte im JSON-Format: {"aufhaenger": "lockerer Einstieg", "detail": "Hintergrund-Fakt", "bruecke": "Frage"}`;
 
-            // Nutze 1.5 Flash für höchste Stabilität
             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                body: JSON.stringify({ 
+                    contents: [{ parts: [{ text: promptStr }] }],
+                    safetySettings: [
+                        { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+                        { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+                        { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+                        { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+                    ],
+                    generationConfig: {
+                        temperature: 1.0,
+                        responseMimeType: "application/json"
+                    }
+                })
             });
 
             const data = await aiRes.json();
             
             if (data.candidates && data.candidates[0].content.parts[0].text) {
-                const raw = data.candidates[0].content.parts[0].text;
-                const json = JSON.parse(raw.substring(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+                const json = JSON.parse(data.candidates[0].content.parts[0].text);
                 
                 container.innerHTML = `
                     <div class="context-box">
                         <div class="context-item"><span class="context-label">Aufhänger</span>${json.aufhaenger}</div>
-                        <div class="context-item"><span class="context-label">Detail</span>${json.detail}</div>
-                        <div class="context-item"><span class="context-label">Brücke</span><span class="bridge-text">${json.bruecke}</span></div>
+                        <div class="context-item"><span class="context-label">Das Detail</span>${json.detail}</div>
+                        <div class="context-item"><span class="context-label">Die Brücke</span><span class="bridge-text">${json.bruecke}</span></div>
                     </div>`;
                 container.style.fontStyle = "normal";
                 container.style.color = "inherit";
             } else {
-                container.textContent = "Kontext durch Filter blockiert.";
+                container.textContent = "KI-Inhalt gefiltert.";
             }
         } catch (e) {
-            container.textContent = "Fehler beim Laden.";
+            container.textContent = "Kontext aktuell nicht verfügbar.";
+            console.error(e);
         }
     }
 
+    // Automatischer Start bei vorhandenem Key
     window.onload = () => { if(localStorage.getItem('daily_talk_gemini_key')) startApp(); };
 </script>
 </body>
