@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Talk - Smart Edition</title>
+    <title>Daily Talk - Deep Edition</title>
     <style>
         :root { --primary: #0ea5e9; --bg: #0f172a; --accent: #10b981; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; margin: 0; }
@@ -11,12 +11,12 @@
         h1 { text-align: center; font-size: 2.2rem; margin: 0; background: linear-gradient(to right, #38bdf8, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .status-area { text-align: center; margin: 20px 0; min-height: 50px; }
         #statusText { font-size: 0.9rem; color: #94a3b8; font-style: italic; }
-        .card { background: #334155; padding: 20px; margin-bottom: 18px; border-radius: 16px; border-left: 4px solid var(--accent); animation: slideUp 0.5s ease-out forwards; opacity: 0; }
-        .card h3 { margin: 0 0 10px 0; color: #f1f5f9; font-size: 1.15rem; }
-        .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
-        .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
+        .card { background: #334155; padding: 24px; margin-bottom: 20px; border-radius: 20px; border-left: 5px solid var(--accent); animation: slideUp 0.5s ease-out forwards; opacity: 0; }
+        .card h3 { margin: 0 0 12px 0; color: #f1f5f9; font-size: 1.2rem; line-height: 1.4; }
+        .card .story { margin-bottom: 15px; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
+        .card .bridge { font-style: italic; color: var(--primary); font-size: 0.95rem; font-weight: 500; border-top: 1px solid #475569; padding-top: 12px; }
+        .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; }
         .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; }
-        .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
@@ -25,9 +25,9 @@
 <div class="container">
     <button onclick="localStorage.removeItem('daily_talk_gemini_key'); location.reload();" style="position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem;">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
-    <div class="status-area"><div id="statusText">Initialisiere...</div></div>
+    <div class="status-area"><div id="statusText">Lade Kontext...</div></div>
     <div id="results"></div>
-    <button id="btnLoad" class="refresh-btn" onclick="startApp()">Inspiration laden</button>
+    <button id="btnLoad" class="refresh-btn" onclick="startApp()">Mehr Kontext laden</button>
 </div>
 
 <script>
@@ -47,41 +47,37 @@
 
         btn.disabled = true;
         resultsDiv.innerHTML = '';
-        status.textContent = "Prüfe verfügbare Modelle...";
+        status.textContent = "Analysiere News für tiefgründige Gespräche...";
 
         try {
-            // 1. Liste alle Modelle und filtere nach "generateContent" Fähigkeit
             const modelListRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
             const modelListData = await modelListRes.json();
-            
-            if (!modelListData.models) throw new Error("API Key Fehler oder keine Modelle gefunden.");
-
-            // Wir suchen nur Modelle, die tatsächlich Text generieren können
             const usableModels = modelListData.models.filter(m => m.supportedGenerationMethods.includes("generateContent"));
-            
-            // Prioritäten-Check: Was ist das neueste/beste verfügbare Modell?
-            const priorities = ['gemini-3.1', 'gemini-2.5', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            const priorities = ['gemini-2.0-flash', 'gemini-1.5-flash'];
             let bestModel = usableModels.find(m => priorities.some(p => m.name.includes(p))) || usableModels[0];
             
-            status.textContent = `Nutze ${bestModel.name.split('/').pop()} für Good News...`;
-
-            // 2. News laden
             const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
-            const headlines = rssData.items.slice(0, 6).map(i => i.title).join("\n");
+            const headlines = rssData.items.slice(0, 5).map(i => i.title).join("\n");
 
-            // 3. KI Anfrage an das gefundene Modell
+            const prompt = `Du bist ein Kommunikationsexperte. Erstelle aus diesen News 3 ausführliche Small-Talk Eisbrecher.
+            Jeder Eisbrecher muss Kontext liefern, damit man ein echtes Gespräch führen kann.
+            
+            Formatierung:
+            - category: Kurzes Thema
+            - title: Ein lockerer Einstiegssatz
+            - explanation: Liefere Hintergrund-Details (2-3 Sätze). Was genau ist passiert? Warum ist das wichtig?
+            - bridge: Eine Frage oder ein Gedanke, um das Gegenüber einzubinden.
+            
+            Antworte NUR als JSON-Array: [{"category": "..", "title": "..", "explanation": "..", "bridge": ".."}] \n\nNews:\n${headlines}`;
+
             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    contents: [{ parts: [{ text: `Erstelle aus diesen News 3 kurze Small-Talk Eisbrecher als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "INFO"}] \n\nNews:\n${headlines}` }] }]
-                })
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
 
             const aiData = await aiRes.json();
-            if (aiData.error) throw new Error(aiData.error.message);
-
             const rawText = aiData.candidates[0].content.parts[0].text;
             const icebreakers = JSON.parse(rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1));
 
@@ -90,14 +86,18 @@
                 setTimeout(() => {
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.innerHTML = `<span class="tag">${item.category}</span><h3>${item.title}</h3><p>${item.explanation}</p>`;
-                    div.style.animationDelay = `${index * 0.1}s`;
+                    div.innerHTML = `
+                        <span class="tag">${item.category}</span>
+                        <h3>${item.title}</h3>
+                        <p class="story">${item.explanation}</p>
+                        <div class="bridge">${item.bridge}</div>
+                    `;
                     resultsDiv.appendChild(div);
                 }, index * 150);
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5; font-size: 0.8rem;">Fehler: ${err.message}</div>`;
+            status.innerHTML = `<div style="color:#fca5a5;">Fehler: ${err.message}</div>`;
         } finally {
             btn.disabled = false;
         }
