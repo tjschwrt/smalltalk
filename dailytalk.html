@@ -9,31 +9,46 @@
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; margin: 0; }
         .container { width: 100%; max-width: 650px; background: #1e293b; padding: 40px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); margin-top: 20px; position: relative; }
         h1 { text-align: center; font-size: 2.2rem; margin: 0; background: linear-gradient(to right, #38bdf8, #10b981); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .status-area { text-align: center; margin: 20px 0; min-height: 50px; }
-        #statusText { font-size: 0.9rem; color: #94a3b8; font-style: italic; }
+        .status-area { text-align: center; margin: 20px 0; min-height: 60px; }
+        #statusText { font-size: 0.95rem; color: #94a3b8; font-style: italic; line-height: 1.4; }
         .card { background: #334155; padding: 24px; margin-bottom: 20px; border-radius: 20px; border-left: 5px solid var(--accent); animation: slideUp 0.5s ease-out forwards; opacity: 0; }
         .card h3 { margin: 0 0 12px 0; color: #f1f5f9; font-size: 1.2rem; line-height: 1.4; }
         .card .story { margin-bottom: 15px; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
         .card .bridge { font-style: italic; color: var(--primary); font-size: 0.95rem; font-weight: 500; border-top: 1px solid #475569; padding-top: 12px; }
         .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin-bottom: 10px; text-transform: uppercase; }
-        .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; }
+        .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; font-size: 1rem; transition: 0.3s; }
+        .refresh-btn:disabled { background: #1e293b; color: #475569; cursor: not-allowed; border: 1px solid #334155; }
+        .settings-btn { position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem; text-decoration: underline; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .error-box { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #fca5a5; padding: 15px; border-radius: 12px; font-size: 0.9rem; margin-bottom: 20px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <button onclick="localStorage.removeItem('daily_talk_gemini_key'); location.reload();" style="position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem;">Key ändern ⚙️</button>
+    <button class="settings-btn" onclick="resetApp()">App zurücksetzen ⚙️</button>
     <h1>Daily Talk ✨</h1>
-    <div class="status-area"><div id="statusText">Lade Kontext...</div></div>
+    <div class="status-area"><div id="statusText">Drücke den Button für frische Inspiration.</div></div>
     <div id="results"></div>
-    <button id="btnLoad" class="refresh-btn" onclick="startApp()">Mehr Kontext laden</button>
+    <button id="btnLoad" class="refresh-btn" onclick="startApp()">Inspiration laden</button>
 </div>
 
 <script>
     let API_KEY = localStorage.getItem('daily_talk_gemini_key');
 
+    function resetApp() {
+        if(confirm("Soll der API-Key gelöscht und die App zurückgesetzt werden?")) {
+            localStorage.removeItem('daily_talk_gemini_key');
+            location.reload();
+        }
+    }
+
     async function startApp() {
+        const status = document.getElementById('statusText');
+        const resultsDiv = document.getElementById('results');
+        const btn = document.getElementById('btnLoad');
+
+        // 1. Key Check
         if (!API_KEY) {
             const userKey = prompt("Bitte gib deinen Gemini API-Key ein:");
             if (!userKey) return;
@@ -41,76 +56,58 @@
             localStorage.setItem('daily_talk_gemini_key', API_KEY);
         }
 
-        const status = document.getElementById('statusText');
-        const resultsDiv = document.getElementById('results');
-        const btn = document.getElementById('btnLoad');
-
         btn.disabled = true;
         resultsDiv.innerHTML = '';
-        status.textContent = "Analysiere News für tiefgründige Gespräche...";
-async function startApp() {
-        if (!API_KEY) {
-            const userKey = prompt("Bitte gib deinen Gemini API-Key ein:");
-            if (!userKey) return;
-            API_KEY = userKey.trim();
-            localStorage.setItem('daily_talk_gemini_key', API_KEY);
-        }
-
-        const status = document.getElementById('statusText');
-        const resultsDiv = document.getElementById('results');
-        const btn = document.getElementById('btnLoad');
-
-        btn.disabled = true;
-        resultsDiv.innerHTML = '';
-        status.textContent = "Prüfe Verbindung zu Google...";
+        status.innerHTML = "Schritt 1: Hole News von GoodNews.eu...";
 
         try {
-            // 1. Liste Modelle abrufen
-            const modelListRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
-            const modelListData = await modelListRes.json();
+            // 2. News laden (mit Timeout)
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 8000); // 8 Sekunden Timeout
             
-            // SICHERHEITS-CHECK: Wenn 'models' fehlt, gab es einen API-Fehler
-            if (!modelListData.models) {
-                if (modelListData.error) {
-                    throw new Error(`API Fehler: ${modelListData.error.message}`);
-                }
-                throw new Error("Konnte keine Modell-Liste abrufen. Key prüfen!");
-            }
-
-            const usableModels = modelListData.models.filter(m => m.supportedGenerationMethods.includes("generateContent"));
-            const priorities = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-            let bestModel = usableModels.find(m => priorities.some(p => m.name.includes(p))) || usableModels[0];
+            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`, { signal: controller.signal });
+            clearTimeout(id);
             
-            // 2. News laden
-            status.textContent = "Hole News von goodnews.eu...";
-            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
+            if (!rssData.items || rssData.items.length === 0) throw new Error("Keine News gefunden. Bitte später nochmal versuchen.");
             
-            if (!rssData.items) throw new Error("News-Feed konnte nicht geladen werden.");
             const headlines = rssData.items.slice(0, 5).map(i => i.title).join("\n");
 
-            // 3. KI Anfrage
-            status.textContent = `KI bereitet Gespräch vor...`;
+            // 3. Modell finden
+            status.innerHTML = "Schritt 2: Suche bestes KI-Modell...";
+            const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+            const modelData = await modelRes.json();
+
+            if (modelData.error) throw new Error(`Google sagt: ${modelData.error.message}`);
+            
+            const usable = (modelData.models || []).filter(m => m.supportedGenerationMethods.includes("generateContent"));
+            if (usable.length === 0) throw new Error("Kein passendes KI-Modell für deinen Key gefunden.");
+
+            // Priorität auf 1.5 Flash (stabiler im Free Tier)
+            const priorities = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-pro'];
+            let bestModel = usable.find(m => priorities.some(p => m.name.includes(p))) || usable[0];
+
+            // 4. KI Anfrage
+            status.innerHTML = `Schritt 3: KI (${bestModel.name.split('/').pop()}) schreibt Kontext...`;
+            
+            const prompt = `Erstelle aus diesen News 3 ausführliche Small-Talk Eisbrecher.
+            Format: category, title (Einstieg), explanation (2-3 Sätze Kontext), bridge (Frage/Gedanke).
+            Antworte STRENG NUR als JSON-Array: [{"category": "..", "title": "..", "explanation": "..", "bridge": ".."}] \n\nNews:\n${headlines}`;
+
             const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    contents: [{ parts: [{ text: `Du bist Kommunikationsexperte. Erstelle aus diesen News 3 ausführliche Small-Talk Eisbrecher.
-                    Format: category (Thema), title (Einstieg), explanation (2-3 Sätze Kontext), bridge (Frage/Gedanke).
-                    Antworte NUR als JSON-Array: [{"category": "..", "title": "..", "explanation": "..", "bridge": ".."}] \n\nNews:\n${headlines}` }] }]
-                })
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
 
             const aiData = await aiRes.json();
-            
-            // SICHERHEITS-CHECK: Falls die KI-Antwort gefiltert wurde
-            if (!aiData.candidates || aiData.candidates.length === 0) {
-                throw new Error("Inhalt wurde von den Google-Sicherheitsfiltern blockiert.");
-            }
+            if (aiData.error) throw new Error(aiData.error.message);
+            if (!aiData.candidates || aiData.candidates.length === 0) throw new Error("Inhalt wurde von Filtern blockiert.");
 
             const rawText = aiData.candidates[0].content.parts[0].text;
-            const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
-            const icebreakers = JSON.parse(jsonStr);
+            const jsonStart = rawText.indexOf('[');
+            const jsonEnd = rawText.lastIndexOf(']') + 1;
+            const icebreakers = JSON.parse(rawText.substring(jsonStart, jsonEnd));
 
             status.style.display = 'none';
             icebreakers.forEach((item, index) => {
@@ -128,16 +125,14 @@ async function startApp() {
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5; background:rgba(239,68,68,0.1); padding:15px; border-radius:10px; border:1px solid #ef4444;">
-                <strong>Oje!</strong><br>${err.message}<br>
-                <button onclick="location.reload()" style="margin-top:10px; background:#ef4444; border:none; color:white; padding:5px 10px; border-radius:5px; cursor:pointer;">Neu laden</button>
-            </div>`;
+            status.innerHTML = `<div class="error-box"><strong>Fehler:</strong><br>${err.message}</div>`;
             console.error(err);
         } finally {
             btn.disabled = false;
         }
     }
 
+    // Beim ersten Laden direkt starten, wenn Key da ist
     window.onload = () => { if(API_KEY) startApp(); };
 </script>
 </body>
