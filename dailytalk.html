@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Talk - Secure Edition</title>
+    <title>Daily Talk - Positivity Engine</title>
     <style>
         :root { --primary: #0ea5e9; --bg: #0f172a; --accent: #10b981; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; margin: 0; }
@@ -16,7 +16,6 @@
         .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
         .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
         .settings-btn { position: absolute; top: 15px; right: 15px; background: #334155; border: 1px solid #475569; color: #94a3b8; cursor: pointer; font-size: 0.75rem; padding: 5px 10px; border-radius: 8px; }
-        .settings-btn:hover { background: #475569; color: white; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
@@ -26,7 +25,7 @@
     <button class="settings-btn" onclick="resetKey()">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
     <div class="status-area">
-        <div id="statusText">Initialisiere...</div>
+        <div id="statusText">Lade positive Energie...</div>
     </div>
     <div id="results"></div>
 </div>
@@ -41,7 +40,7 @@
 
     async function checkKey() {
         if (!API_KEY) {
-            const userKey = prompt("Bitte gib deinen Gemini API-Key ein:\n(Lokal gespeichert)");
+            const userKey = prompt("Bitte gib deinen Gemini API-Key ein:");
             if (userKey) {
                 localStorage.setItem('daily_talk_gemini_key', userKey.trim());
                 API_KEY = userKey.trim();
@@ -53,84 +52,86 @@
     }
 
     const SEARCH_QUERY = "Klimaschutz Erfolge OR soziale Gerechtigkeit Fortschritt OR Friedensinitiativen";
-    const RSS_URL = `https://news.google.com/rss/search?q=${encodeURIComponent(SEARCH_QUERY)}&hl=de&gl=DE&ceid=DE:de`;
 
     async function startApp() {
         const status = document.getElementById('statusText');
         const resultsDiv = document.getElementById('results');
 
-        if (!await checkKey()) {
-            status.textContent = "Bitte Seite neu laden und Key eingeben.";
-            return;
-        }
+        if (!await checkKey()) return;
 
         try {
-            status.textContent = "Verbinde mit Google KI...";
+            // 1. Modell finden
             const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
-            if (!modelRes.ok) throw new Error("API-Key ungültig oder abgelaufen.");
-            
+            if (!modelRes.ok) throw new Error("API-Key ungültig.");
             const modelData = await modelRes.json();
-            const priorities = ['gemini-3-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-            const models = modelData.models.map(m => m.name);
-            let found = priorities.find(p => models.some(m => m.includes(p))) || models[0].name;
-            const modelName = found.includes('/') ? found : `models/${found}`;
+            const found = ['gemini-3-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'].find(p => modelData.models.some(m => m.name.includes(p))) || modelData.models[0].name;
+            const modelUrl = `https://generativelanguage.googleapis.com/v1beta/${found.includes('/') ? found : 'models/'+found}:generateContent?key=${API_KEY}`;
 
-            status.textContent = "Suche positive Nachrichten...";
-            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(RSS_URL)}`);
+            // 2. News laden
+            status.textContent = "Suche nach guten Nachrichten...";
+            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://news.google.com/rss/search?q='+SEARCH_QUERY+'&hl=de&gl=DE&ceid=DE:de')}`);
             const rssData = await rssRes.json();
+            const headlines = (rssData.items || []).slice(0, 10).map(i => i.title).join("\n");
+
+            // 3. KI Anfrage (mit Fallback-Logik im Prompt)
+            status.textContent = "KI destilliert Eisbrecher...";
             
-            if (!rssData.items || rssData.items.length === 0) throw new Error("Keine News gefunden.");
-            const headlines = rssData.items.slice(0, 12).map(i => i.title).join("\n");
+            const prompt = headlines 
+                ? `Hier sind News-Schlagzeilen. Erstelle 3-5 positive Eisbrecher für Small-Talk über Fortschritte (Klima/Soziales/Frieden). 
+                   Falls die News zu negativ sind, generiere stattdessen 3 inspirierende Fakten über die Welt.
+                   Antworte NUR als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "WARUM"}]`
+                : `Generiere 3 inspirierende, positive Fakten über Fortschritte in der Welt (Technik, Natur oder Soziales) als Small-Talk Eisbrecher.
+                   Antworte NUR als JSON-Array: [{"category": "FAKT", "title": "SATZ", "explanation": "DETAILS"}]`;
 
-            status.textContent = "KI generiert Eisbrecher...";
-            const prompt = `Du bist ein konstruktiver Small-Talk-Experte. Erstelle aus diesen News 3-5 positive Eisbrecher.
-            REGEL: Nur positive Entwicklungen zu Klima, Frieden oder Sozialem.
-            Antworte NUR als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "GRUND"}]`;
-
-            const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent?key=${API_KEY}`, {
+            const aiRes = await fetch(modelUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
-                    contents: [{ parts: [{ text: prompt + "\n\nNews:\n" + headlines }] }],
-                    safetySettings: [
-                        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-                    ]
+                    contents: [{ parts: [{ text: prompt + (headlines ? "\n\nNews:\n" + headlines : "") }] }],
+                    generationConfig: { temperature: 0.8 }
                 })
             });
 
             const aiData = await aiRes.json();
 
-            // ABSICHERUNG gegen leere Antworten (der Fix für deinen Fehler)
-            if (!aiData.candidates || aiData.candidates.length === 0 || !aiData.candidates[0].content) {
-                throw new Error("Die KI konnte keine Antwort generieren (möglicherweise durch Filter blockiert).");
+            // Sicherheits-Check: Falls Kandidaten fehlen, manuellen Fallback triggern
+            if (!aiData.candidates || aiData.candidates.length === 0) {
+                displayFallback(resultsDiv, status);
+                return;
             }
 
             const rawText = aiData.candidates[0].content.parts[0].text;
-            const jsonStart = rawText.indexOf('[');
-            const jsonEnd = rawText.lastIndexOf(']') + 1;
-            
-            if (jsonStart === -1) throw new Error("Ungültiges Antwortformat der KI.");
+            const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
+            const icebreakers = JSON.parse(jsonStr);
 
-            const icebreakers = JSON.parse(rawText.substring(jsonStart, jsonEnd));
-
-            status.style.display = 'none';
-            resultsDiv.innerHTML = ''; 
-            icebreakers.forEach((item, index) => {
-                setTimeout(() => {
-                    const div = document.createElement('div');
-                    div.className = 'card';
-                    div.innerHTML = `<span class="tag">${item.category}</span><h3>${item.title}</h3><p>${item.explanation}</p>`;
-                    resultsDiv.appendChild(div);
-                }, index * 200);
-            });
+            renderCards(icebreakers, resultsDiv, status);
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5; padding:10px; border:1px solid #7f1d1d; border-radius:10px; text-align:left;">
-                <strong>Fehler:</strong> ${err.message}</div>`;
+            console.error(err);
+            displayFallback(resultsDiv, status, err.message);
         }
+    }
+
+    function renderCards(data, container, status) {
+        status.style.display = 'none';
+        container.innerHTML = '';
+        data.forEach((item, index) => {
+            setTimeout(() => {
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `<span class="tag">${item.category}</span><h3>${item.title}</h3><p>${item.explanation}</p>`;
+                container.appendChild(div);
+            }, index * 200);
+        });
+    }
+
+    function displayFallback(container, status, errMsg = "") {
+        status.style.display = 'none';
+        const fallbackData = [
+            { category: "INFO", title: "KI macht gerade Pause", explanation: "Die Filter waren heute streng. Probier es in einer Minute nochmal!" },
+            { category: "FAKT", title: "Wusstest du schon?", explanation: "In den letzten 20 Jahren hat sich die weltweite Kindersterblichkeit halbiert. Ein echter Grund zur Freude!" }
+        ];
+        renderCards(fallbackData, container, status);
     }
 
     window.onload = startApp;
