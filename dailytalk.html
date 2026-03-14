@@ -3,185 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Talk - Dein Small-Talk Experte</title>
+    <title>Daily Talk - Small Talk Experte</title>
     <style>
-        :root {
-            --primary: #6366f1;
-            --bg: #f8fafc;
-            --card-bg: rgba(255, 255, 255, 0.8);
-        }
-
-        body {
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: linear-gradient(135deg, #e0e7ff 0%, #f1f5f9 100%);
-            min-height: 100vh;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            padding: 2rem;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 800px;
-            background: var(--card-bg);
-            backdrop-filter: blur(10px);
-            padding: 2rem;
-            border-radius: 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        }
-
-        h1 { color: #1e293b; text-align: center; margin-bottom: 0.5rem; }
-        p.subtitle { text-align: center; color: #64748b; margin-bottom: 2rem; }
-
-        textarea {
-            width: 100%;
-            height: 150px;
-            padding: 1rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 12px;
-            font-size: 1rem;
-            resize: vertical;
-            box-sizing: border-box;
-            transition: border-color 0.2s;
-        }
-
-        textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
-
-        button {
-            display: block;
-            width: 100%;
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 1rem;
-            margin-top: 1rem;
-            border-radius: 12px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.1s, opacity 0.2s;
-        }
-
-        button:hover { opacity: 0.9; }
-        button:active { transform: scale(0.98); }
-        button:disabled { background: #94a3b8; cursor: not-allowed; }
-
-        #results {
-            margin-top: 2rem;
-            display: grid;
-            gap: 1rem;
-        }
-
-        .icebreaker-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 15px;
-            border-left: 5px solid var(--primary);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-            animation: fadeIn 0.5s ease forwards;
-        }
-
-        .icebreaker-card h3 { margin: 0 0 0.5rem 0; color: #1e293b; font-size: 1.1rem; }
-        .icebreaker-card p { margin: 0; color: #475569; line-height: 1.5; }
-        .explanation { margin-top: 0.8rem !important; font-size: 0.85rem; color: #94a3b8 !important; font-style: italic; }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .loader { text-align: center; display: none; margin-top: 1rem; color: var(--primary); }
+        :root { --primary: #6366f1; --bg: #f8fafc; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; display: flex; justify-content: center; padding: 20px; }
+        .container { width: 100%; max-width: 700px; background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #1e293b; margin-top: 0; }
+        textarea { width: 100%; height: 120px; padding: 15px; border: 2px solid #e2e8f0; border-radius: 12px; font-size: 16px; box-sizing: border-box; transition: border-color 0.3s; }
+        textarea:focus { outline: none; border-color: var(--primary); }
+        button { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; margin-top: 15px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #cbd5e1; }
+        .loader { display: none; text-align: center; margin: 20px 0; color: var(--primary); font-weight: bold; }
+        #results { margin-top: 25px; }
+        .card { background: #fff; border-left: 5px solid var(--primary); padding: 15px; margin-bottom: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); animation: slideIn 0.3s ease-out; }
+        .card h3 { margin: 0 0 8px 0; font-size: 18px; color: #1e293b; }
+        .card p { margin: 0; color: #64748b; font-size: 14px; line-height: 1.6; }
+        .error-box { background: #fee2e2; color: #991b1b; padding: 15px; border-radius: 10px; margin-top: 20px; font-size: 14px; border: 1px solid #fecaca; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>Daily Talk ☕</h1>
-    <p class="subtitle">Wandle News in sympathische Eisbrecher um.</p>
-
-    <textarea id="newsInput" placeholder="Kopiere hier die News-Schlagzeilen des Tages hinein..."></textarea>
-    
+    <textarea id="newsInput" placeholder="Kopiere News-Schlagzeilen hier hinein..."></textarea>
     <button id="generateBtn">Vorschläge generieren</button>
-    
-    <div id="loader" class="loader">Analysiere Schlagzeilen...</div>
+    <div id="loader" class="loader">KI überlegt... 💡</div>
     <div id="results"></div>
 </div>
 
 <script>
-    // --- KONFIGURATION ---
-    const API_KEY = 'AIzaSyCRYqi7ItekQoX-wMB35J2j8on_u0g4a_o'; // <-- Hier deinen Key einfügen
+    // --- SETUP ---
+    const API_KEY = 'AIzaSyCRYqi7ItekQoX-wMB35J2j8on_u0g4a_o'; // <-- DEINEN KEY HIER EINTRAGEN
     const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
-    const generateBtn = document.getElementById('generateBtn');
-    const newsInput = document.getElementById('newsInput');
-    const resultsContainer = document.getElementById('results');
+    const btn = document.getElementById('generateBtn');
+    const input = document.getElementById('newsInput');
+    const results = document.getElementById('results');
     const loader = document.getElementById('loader');
 
-    generateBtn.addEventListener('click', async () => {
-        const newsText = newsInput.value.trim();
-        if (!newsText) {
-            alert("Bitte kopiere zuerst ein paar News hinein!");
-            return;
-        }
+    btn.addEventListener('click', async () => {
+        const text = input.value.trim();
+        if (!text) return alert("Bitte News einfügen!");
 
-        // UI Reset
-        resultsContainer.innerHTML = '';
+        results.innerHTML = '';
         loader.style.display = 'block';
-        generateBtn.disabled = true;
+        btn.disabled = true;
 
-        const systemPrompt = `Du bist ein Small-Talk-Experte. Deine Aufgabe ist es, basierend auf dem heutigen Datum und den bereitgestellten Schlagzeilen 3–5 sympathische, unverfängliche Eisbrecher für Gespräche im Büro oder im Alltag zu generieren.
-        Regeln:
-        - Vermeide Politik und schwere Krisen.
-        - Konzentriere dich auf Lifestyle, Sport, lokales Wetter oder Kulturelles.
-        - Gib zu jedem Vorschlag eine kurze Erklärung, warum das heute ein gutes Thema ist.
-        - Formatiere die Antwort STRENG als JSON-Array von Objekten: [{"title": "Eisbrecher Spruch", "explanation": "Grund"}]. Gib NUR das JSON zurück, keinen Text davor oder danach.`;
+        const prompt = `Du bist ein Small-Talk-Experte. Erstelle basierend auf diesen News 3-5 sympathische Eisbrecher.
+        Regeln: Kein Politik/Krisen. Fokus auf Lifestyle, Sport, Wetter oder Kultur.
+        Antworte NUR als JSON-Array im Format: [{"title": "Satz", "explanation": "Grund"}]`;
 
         try {
             const response = await fetch(`${MODEL_URL}?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{ text: `${systemPrompt}\n\nNews des Tages:\n${newsText}` }]
-                    }]
-                })
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt + "\n\nNews:\n" + text }] }] })
             });
 
             const data = await response.json();
-            
-            // Text extrahieren und JSON parsen (Gemini liefert manchmal Markdown-Code-Blocks)
+
+            if (data.error) throw new Error(data.error.message);
+            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) throw new Error("Die KI hat keine Antwort geliefert (evtl. Filter).");
+
             let rawText = data.candidates[0].content.parts[0].text;
-            const cleanedText = rawText.replace(/```json|```/g, "").trim();
-            const icebreakers = JSON.parse(cleanedText);
+            // Extrahiere JSON-Teil (falls die KI Text drumherum baut)
+            const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
+            const icebreakers = JSON.parse(jsonStr);
 
-            displayCards(icebreakers);
+            icebreakers.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `<h3>${item.title}</h3><p>${item.explanation}</p>`;
+                results.appendChild(div);
+            });
 
-        } catch (error) {
-            console.error("Detaillierter Fehler:", error);
-            resultsContainer.innerHTML = `<p style="color:red">Fehler-Details: ${error.message}</p>`;
-
+        } catch (err) {
+            results.innerHTML = `<div class="error-box"><strong>Fehler:</strong> ${err.message}</div>`;
+            console.error(err);
         } finally {
             loader.style.display = 'none';
-            generateBtn.disabled = false;
+            btn.disabled = false;
         }
     });
-
-    function displayCards(items) {
-        resultsContainer.innerHTML = '';
-        items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'icebreaker-card';
-            card.innerHTML = `
-                <h3>${item.title}</h3>
-                <p>${item.explanation}</p>
-            `;
-            resultsContainer.appendChild(card);
-        });
-    }
 </script>
 
 </body>
