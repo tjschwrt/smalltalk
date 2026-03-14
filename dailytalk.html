@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Talk - Stable Edition</title>
+    <title>Daily Talk - Ultra Lite Edition</title>
     <style>
         :root { --primary: #0ea5e9; --bg: #0f172a; --accent: #10b981; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; margin: 0; }
@@ -12,92 +12,88 @@
         .status-area { text-align: center; margin: 20px 0; min-height: 50px; }
         #statusText { font-size: 0.9rem; color: #94a3b8; font-style: italic; }
         .card { background: #334155; padding: 20px; margin-bottom: 18px; border-radius: 16px; border-left: 4px solid var(--accent); animation: slideUp 0.5s ease-out forwards; opacity: 0; }
-        .card h3 { margin: 0 0 10px 0; color: #f1f5f9; font-size: 1.15rem; line-height: 1.3; }
+        .card h3 { margin: 0 0 10px 0; color: #f1f5f9; font-size: 1.15rem; }
         .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
         .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
-        .refresh-btn { display: block; width: 100%; background: #334155; border: 1px solid #475569; color: white; padding: 12px; border-radius: 12px; cursor: pointer; margin-top: 10px; transition: all 0.3s; font-size: 0.9rem; }
-        .refresh-btn:hover { background: #475569; }
-        .settings-btn { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #475569; cursor: pointer; font-size: 0.8rem; }
+        .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; transition: 0.3s; }
+        .refresh-btn:hover { background: #0284c7; }
+        .refresh-btn:disabled { background: #334155; opacity: 0.5; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <button class="settings-btn" onclick="resetKey()">Key ändern ⚙️</button>
+<div class="container" style="position: relative;">
+    <button onclick="localStorage.removeItem('daily_talk_gemini_key'); location.reload();" style="position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem;">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
     <div class="status-area">
-        <div id="statusText">Warte auf Inspiration...</div>
+        <div id="statusText">Bereit für Good News?</div>
     </div>
     <div id="results"></div>
-    <button class="refresh-btn" onclick="startApp()">Inspiration aktualisieren ↻</button>
+    <button id="btnLoad" class="refresh-btn" onclick="startApp()">Inspiration laden</button>
 </div>
 
 <script>
     let API_KEY = localStorage.getItem('daily_talk_gemini_key');
 
-    function resetKey() {
-        localStorage.removeItem('daily_talk_gemini_key');
-        location.reload();
-    }
-
-    async function checkKey() {
+    async function startApp() {
         if (!API_KEY) {
             const userKey = prompt("Bitte gib deinen Gemini API-Key ein:");
-            if (userKey) {
-                localStorage.setItem('daily_talk_gemini_key', userKey.trim());
-                API_KEY = userKey.trim();
-                return true;
-            }
-            return false;
+            if (!userKey) return;
+            API_KEY = userKey.trim();
+            localStorage.setItem('daily_talk_gemini_key', API_KEY);
         }
-        return true;
-    }
 
-    async function startApp() {
         const status = document.getElementById('statusText');
         const resultsDiv = document.getElementById('results');
-        
-        if (!await checkKey()) return;
+        const btn = document.getElementById('btnLoad');
 
+        btn.disabled = true;
         resultsDiv.innerHTML = '';
-        status.style.display = 'block';
-        status.textContent = "Verbinde mit Gemini 1.5 Flash (Stabil)...";
+        status.textContent = "Suche modernstes Lite-Modell...";
 
         try {
-            // Wir nehmen direkt 1.5 Flash, um Quota-Fehler von 2.0 zu vermeiden
-            const modelUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
-
-            // 1. News von GoodNews.eu
-            status.textContent = "Hole News von goodnews.eu...";
+            // 1. News von GoodNews.eu laden
             const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
             const headlines = rssData.items.slice(0, 7).map(i => i.title).join("\n");
 
-            // 2. KI-Generierung
-            status.textContent = "KI erstellt Eisbrecher...";
+            // 2. Beste Lite-Version finden
+            const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+            const modelData = await modelRes.json();
             
-            const prompt = `Erstelle aus diesen positiven News 3-4 sympathische Small-Talk Eisbrecher. 
-            Antworte nur als JSON: [{"category": "THEMA", "title": "SATZ", "explanation": "INFO"}] \n\nNews:\n${headlines}`;
+            // Prioritätenliste inkl. deiner 3.1 und 2.5er Favoriten
+            const priorities = [
+                'gemini-3.1-flash-lite', 
+                'gemini-2.5-flash-lite', 
+                'gemini-2.0-flash-lite', 
+                'gemini-1.5-flash-8b', 
+                'gemini-1.5-flash'
+            ];
+            
+            const availableModels = modelData.models.map(m => m.name);
+            let chosen = priorities.find(p => availableModels.some(m => m.includes(p))) || availableModels[0];
+            
+            // Korrekten Pfad sicherstellen
+            const modelPath = chosen.includes('/') ? chosen : `models/${chosen}`;
+            status.textContent = `Nutze ${modelPath.split('/').pop()}...`;
 
-            const aiRes = await fetch(modelUrl, {
+            // 3. KI Anfrage
+            const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                body: JSON.stringify({ 
+                    contents: [{ parts: [{ text: `Du bist ein Kommunikationsexperte. Erstelle aus diesen News 3-4 positive Small-Talk Eisbrecher. 
+                    Antworte NUR als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "DETAILS"}] \n\nNews:\n${headlines}` }] }],
+                    generationConfig: { temperature: 0.8 }
+                })
             });
 
             const aiData = await aiRes.json();
-            
-            if (aiData.error) {
-                if (aiData.error.message.includes("quota")) {
-                    throw new Error("Limit erreicht. Bitte warte 30 Sekunden.");
-                }
-                throw new Error(aiData.error.message);
-            }
+            if (aiData.error) throw new Error(aiData.error.message);
 
             const rawText = aiData.candidates[0].content.parts[0].text;
-            const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
-            const icebreakers = JSON.parse(jsonStr);
+            const icebreakers = JSON.parse(rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1));
 
             status.style.display = 'none';
             icebreakers.forEach((item, index) => {
@@ -111,14 +107,13 @@
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="border:1px solid #ef4444; padding:15px; border-radius:12px; color:#fca5a5; background:rgba(239,68,68,0.1);">
-                <strong>Hinweis:</strong> ${err.message}<br>
-                <small>Tipp: Kurz warten und nochmal probieren.</small>
-            </div>`;
+            status.innerHTML = `<div style="color:#fca5a5; padding:10px; border:1px solid #ef4444; border-radius:10px;">${err.message}</div>`;
+        } finally {
+            btn.disabled = false;
         }
     }
 
-    window.onload = startApp;
+    window.onload = () => { if(API_KEY) startApp(); };
 </script>
 </body>
 </html>
