@@ -3,20 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Talk - Gemini 3 Edition</title>
+    <title>Daily Talk - Smart Model Edition</title>
     <style>
         :root { --primary: #0ea5e9; --bg: #0f172a; }
         body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; }
         .container { width: 100%; max-width: 650px; background: #1e293b; padding: 40px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); border: 1px solid #334155; }
-        h1 { text-align: center; font-size: 2.5rem; margin-bottom: 10px; background: linear-gradient(to right, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        p.desc { text-align: center; color: #94a3b8; margin-bottom: 30px; }
-        textarea { width: 100%; height: 140px; padding: 15px; background: #0f172a; border: 1px solid #334155; border-radius: 16px; color: white; font-size: 16px; resize: none; transition: all 0.3s; }
-        textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2); }
-        button { width: 100%; background: var(--primary); color: white; border: none; padding: 16px; margin-top: 20px; border-radius: 16px; font-size: 18px; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
-        button:hover { filter: brightness(1.1); }
-        button:active { transform: scale(0.98); }
+        h1 { text-align: center; font-size: 2.5rem; margin: 0; background: linear-gradient(to right, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .status-badge { text-align: center; margin-bottom: 30px; font-size: 0.8rem; color: #94a3b8; }
+        #activeModel { color: #38bdf8; font-weight: bold; }
+        textarea { width: 100%; height: 140px; padding: 15px; background: #0f172a; border: 1px solid #334155; border-radius: 16px; color: white; font-size: 16px; resize: none; box-sizing: border-box; }
+        button { width: 100%; background: var(--primary); color: white; border: none; padding: 16px; margin-top: 20px; border-radius: 16px; font-size: 18px; font-weight: 600; cursor: pointer; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        #results { margin-top: 30px; }
         .card { background: #334155; padding: 20px; margin-bottom: 15px; border-radius: 16px; border-left: 4px solid var(--primary); animation: fadeIn 0.4s ease-out; }
         .card h3 { margin: 0 0 10px 0; color: #f1f5f9; }
         .card p { margin: 0; color: #cbd5e1; font-size: 15px; line-height: 1.6; }
@@ -29,58 +26,78 @@
 
 <div class="container">
     <h1>Daily Talk</h1>
-    <p class="desc">Kopiere die News rein, ich mache den Small-Talk daraus.</p>
+    <div class="status-badge">Verbunden mit: <span id="activeModel">Suche Modell...</span></div>
     
-    <textarea id="newsInput" placeholder="Was passiert heute in der Welt?"></textarea>
-    <button id="generateBtn">Eisbrecher finden</button>
+    <textarea id="newsInput" placeholder="Aktuelle News hier reinkopieren..."></textarea>
+    <button id="generateBtn" disabled>Warte auf Modell...</button>
     
-    <div id="loader" class="loader">Gemini 3 analysiert die Lage... ⚡</div>
+    <div id="loader" class="loader">KI generiert Eisbrecher... ⚡</div>
     <div id="results"></div>
 </div>
 
 <script>
-    // --- KONFIGURATION 2026 ---
-    const API_KEY = 'AIzaSyCRYqi7ItekQoX-wMB35J2j8on_u0g4a_o'; 
-    // Wir nutzen hier 'gemini-3-flash', da es die aktuelle Standard-Version ist.
-    const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent";
+    const API_KEY = 'AIzaSyCRYqi7ItekQoX-wMB35J2j8on_u0g4a_o'; // <-- DEIN KEY
+    let bestModelUrl = "";
 
     const btn = document.getElementById('generateBtn');
-    const input = document.getElementById('newsInput');
+    const modelStatus = document.getElementById('activeModel');
     const results = document.getElementById('results');
-    const loader = document.getElementById('loader');
 
+    // 1. Automatische Modellsuche beim Start
+    async function initApp() {
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+            const data = await response.json();
+            
+            if (data.error) throw new Error(data.error.message);
+
+            const models = data.models.map(m => m.name);
+            
+            // Prioritätenliste der Modelle
+            const priorities = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            let foundModel = "";
+
+            for (const p of priorities) {
+                foundModel = models.find(m => m.includes(p));
+                if (foundModel) break;
+            }
+
+            if (!foundModel) foundModel = models[0]; // Notfall: Nimm das erste verfügbare
+
+            bestModelUrl = `https://generativelanguage.googleapis.com/v1beta/${foundModel}:generateContent`;
+            modelStatus.textContent = foundModel.replace('models/', '');
+            btn.disabled = false;
+            btn.textContent = "Eisbrecher finden";
+
+        } catch (err) {
+            modelStatus.textContent = "Fehler beim Laden";
+            results.innerHTML = `<div class="error-box">Modell-Check fehlgeschlagen: ${err.message}</div>`;
+        }
+    }
+
+    // 2. Generierungs-Logik
     btn.addEventListener('click', async () => {
-        const text = input.value.trim();
-        if (!text) return alert("Hau ein paar News rein!");
+        const text = document.getElementById('newsInput').value.trim();
+        if (!text) return alert("News einfügen!");
 
         results.innerHTML = '';
-        loader.style.display = 'block';
+        document.getElementById('loader').style.display = 'block';
         btn.disabled = true;
 
-        const prompt = `Du bist ein Small-Talk-Experte. Erstelle 3-5 sympathische, harmlose Eisbrecher (kein Politik/Krise!) basierend auf diesen News.
+        const prompt = `Du bist ein Small-Talk-Experte. Erstelle 3-5 sympathische, harmlose Eisbrecher (kein Politik/Krise!) basierend auf diesen News. 
         Antworte NUR als valides JSON-Array: [{"title": "Satz", "explanation": "Grund"}]`;
 
         try {
-            const response = await fetch(`${MODEL_URL}?key=${API_KEY}`, {
+            const response = await fetch(`${bestModelUrl}?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt + "\n\nNews:\n" + text }] }]
-                })
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt + "\n\nNews:\n" + text }] }] })
             });
 
             const data = await response.json();
-
-            if (data.error) {
-                // Falls gemini-3-flash noch nicht in deiner Region/Key frei ist, probiere den Fallback
-                throw new Error(data.error.message);
-            }
-
             const rawResponse = data.candidates[0].content.parts[0].text;
-            const jsonStart = rawResponse.indexOf('[');
-            const jsonEnd = rawResponse.lastIndexOf(']') + 1;
-            const jsonStr = rawResponse.substring(jsonStart, jsonEnd);
             
+            const jsonStr = rawResponse.substring(rawResponse.indexOf('['), rawResponse.lastIndexOf(']') + 1);
             const icebreakers = JSON.parse(jsonStr);
 
             icebreakers.forEach(item => {
@@ -91,15 +108,14 @@
             });
 
         } catch (err) {
-            results.innerHTML = `<div class="error-box">
-                <strong>Oje!</strong> ${err.message}<br><br>
-                <small>Tipp: Wenn 'model not found' kommt, ersetze im Code 'gemini-3-flash' durch 'gemini-2.0-flash'.</small>
-            </div>`;
+            results.innerHTML = `<div class="error-box">Generierung fehlgeschlagen: ${err.message}</div>`;
         } finally {
-            loader.style.display = 'none';
+            document.getElementById('loader').style.display = 'none';
             btn.disabled = false;
         }
     });
+
+    initApp();
 </script>
 
 </body>
