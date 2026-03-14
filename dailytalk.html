@@ -159,9 +159,11 @@
             const icebreakers = JSON.parse(cleanedText);
 
             displayCards(icebreakers);
+
         } catch (error) {
-            console.error("API Fehler:", error);
-            resultsContainer.innerHTML = `<p style="color:red">Fehler: Bitte prüfe deinen API-Key und die Internetverbindung.</p>`;
+            console.error("Detaillierter Fehler:", error);
+            resultsContainer.innerHTML = `<p style="color:red">Fehler-Details: ${error.message}</p>`;
+
         } finally {
             loader.style.display = 'none';
             generateBtn.disabled = false;
