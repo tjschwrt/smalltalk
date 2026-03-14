@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Talk - Ultra Lite Edition</title>
+    <title>Daily Talk - Smart Edition</title>
     <style>
         :root { --primary: #0ea5e9; --bg: #0f172a; --accent: #10b981; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; padding: 20px; min-height: 100vh; margin: 0; }
@@ -15,20 +15,17 @@
         .card h3 { margin: 0 0 10px 0; color: #f1f5f9; font-size: 1.15rem; }
         .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.6; }
         .tag { display: inline-block; background: rgba(16, 185, 129, 0.1); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
-        .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; transition: 0.3s; }
-        .refresh-btn:hover { background: #0284c7; }
-        .refresh-btn:disabled { background: #334155; opacity: 0.5; }
+        .refresh-btn { display: block; width: 100%; background: #0ea5e9; border: none; color: white; padding: 14px; border-radius: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; }
+        .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-<div class="container" style="position: relative;">
+<div class="container">
     <button onclick="localStorage.removeItem('daily_talk_gemini_key'); location.reload();" style="position: absolute; top: 15px; right: 15px; background:none; border:none; color:#475569; cursor:pointer; font-size:0.75rem;">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
-    <div class="status-area">
-        <div id="statusText">Bereit für Good News?</div>
-    </div>
+    <div class="status-area"><div id="statusText">Initialisiere...</div></div>
     <div id="results"></div>
     <button id="btnLoad" class="refresh-btn" onclick="startApp()">Inspiration laden</button>
 </div>
@@ -50,42 +47,35 @@
 
         btn.disabled = true;
         resultsDiv.innerHTML = '';
-        status.textContent = "Suche modernstes Lite-Modell...";
+        status.textContent = "Prüfe verfügbare Modelle...";
 
         try {
-            // 1. News von GoodNews.eu laden
+            // 1. Liste alle Modelle und filtere nach "generateContent" Fähigkeit
+            const modelListRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
+            const modelListData = await modelListRes.json();
+            
+            if (!modelListData.models) throw new Error("API Key Fehler oder keine Modelle gefunden.");
+
+            // Wir suchen nur Modelle, die tatsächlich Text generieren können
+            const usableModels = modelListData.models.filter(m => m.supportedGenerationMethods.includes("generateContent"));
+            
+            // Prioritäten-Check: Was ist das neueste/beste verfügbare Modell?
+            const priorities = ['gemini-3.1', 'gemini-2.5', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            let bestModel = usableModels.find(m => priorities.some(p => m.name.includes(p))) || usableModels[0];
+            
+            status.textContent = `Nutze ${bestModel.name.split('/').pop()} für Good News...`;
+
+            // 2. News laden
             const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
-            const headlines = rssData.items.slice(0, 7).map(i => i.title).join("\n");
+            const headlines = rssData.items.slice(0, 6).map(i => i.title).join("\n");
 
-            // 2. Beste Lite-Version finden
-            const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
-            const modelData = await modelRes.json();
-            
-            // Prioritätenliste inkl. deiner 3.1 und 2.5er Favoriten
-            const priorities = [
-                'gemini-3.1-flash-lite', 
-                'gemini-2.5-flash-lite', 
-                'gemini-2.0-flash-lite', 
-                'gemini-1.5-flash-8b', 
-                'gemini-1.5-flash'
-            ];
-            
-            const availableModels = modelData.models.map(m => m.name);
-            let chosen = priorities.find(p => availableModels.some(m => m.includes(p))) || availableModels[0];
-            
-            // Korrekten Pfad sicherstellen
-            const modelPath = chosen.includes('/') ? chosen : `models/${chosen}`;
-            status.textContent = `Nutze ${modelPath.split('/').pop()}...`;
-
-            // 3. KI Anfrage
-            const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${API_KEY}`, {
+            // 3. KI Anfrage an das gefundene Modell
+            const aiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${bestModel.name}:generateContent?key=${API_KEY}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
-                    contents: [{ parts: [{ text: `Du bist ein Kommunikationsexperte. Erstelle aus diesen News 3-4 positive Small-Talk Eisbrecher. 
-                    Antworte NUR als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "DETAILS"}] \n\nNews:\n${headlines}` }] }],
-                    generationConfig: { temperature: 0.8 }
+                    contents: [{ parts: [{ text: `Erstelle aus diesen News 3 kurze Small-Talk Eisbrecher als JSON-Array: [{"category": "THEMA", "title": "SATZ", "explanation": "INFO"}] \n\nNews:\n${headlines}` }] }]
                 })
             });
 
@@ -107,7 +97,7 @@
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="color:#fca5a5; padding:10px; border:1px solid #ef4444; border-radius:10px;">${err.message}</div>`;
+            status.innerHTML = `<div style="color:#fca5a5; font-size: 0.8rem;">Fehler: ${err.message}</div>`;
         } finally {
             btn.disabled = false;
         }
