@@ -27,7 +27,7 @@
     <button class="settings-btn" onclick="resetKey()">Key ändern ⚙️</button>
     <h1>Daily Talk ✨</h1>
     <div class="status-area">
-        <div id="statusText">Initialisiere modernstes Modell...</div>
+        <div id="statusText">Suche kompatibles Modell...</div>
     </div>
     <div id="results"></div>
     <button class="refresh-btn" onclick="startApp()">Inspiration aktualisieren ↻</button>
@@ -62,81 +62,64 @@
 
         resultsDiv.innerHTML = '';
         status.style.display = 'block';
-        status.textContent = "Wähle bestes verfügbares KI-Modell...";
+        status.textContent = "Analysiere verfügbare KI-Modelle...";
 
         try {
-            // 1. Dynamische Modell-Auswahl (sucht nach Gemini 3, 2 oder 1.5)
+            // 1. Modelle abrufen und filtern
             const modelRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}`);
-            if (!modelRes.ok) throw new Error("API-Key ungültig oder Google Dienst nicht erreichbar.");
+            if (!modelRes.ok) throw new Error("API-Key ungültig.");
             
             const modelData = await modelRes.json();
-            const priorities = ['gemini-3-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-            const availableModels = modelData.models.map(m => m.name);
             
-            let found = priorities.find(p => availableModels.some(m => m.includes(p))) || availableModels[0];
-            const modelPath = found.includes('/') ? found : `models/${found}`;
-            const modelUrl = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${API_KEY}`;
+            // Filtert Modelle, die "generateContent" unterstützen
+            const validModels = modelData.models.filter(m => m.supportedGenerationMethods.includes("generateContent"));
+            
+            // Bevorzugte Reihenfolge (Gemini 2 ist oft stabiler in v1beta als das brandneue 3)
+            const priorities = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-pro'];
+            let chosenModel = validModels.find(m => priorities.some(p => m.name.includes(p))) || validModels[0];
 
-            // 2. News von GoodNews.eu laden
-            status.textContent = "Hole frische Meldungen von goodnews.eu...";
-            const rssUrl = "https://goodnews.eu/feed/";
-            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
+            if (!chosenModel) throw new Error("Kein kompatibles Modell gefunden.");
+            
+            const modelUrl = `https://generativelanguage.googleapis.com/v1beta/${chosenModel.name}:generateContent?key=${API_KEY}`;
+
+            // 2. News von GoodNews.eu
+            status.textContent = "Hole News von goodnews.eu...";
+            const rssRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://goodnews.eu/feed/')}`);
             const rssData = await rssRes.json();
-            
-            if (!rssData.items || rssData.items.length === 0) throw new Error("Konnte keine News-Daten empfangen.");
-            
-            const headlines = rssData.items.slice(0, 8).map(i => i.title).join("\n");
+            const headlines = rssData.items.slice(0, 7).map(i => i.title).join("\n");
 
-            // 3. KI-Verarbeitung mit dem gefundenen Modell
-            status.textContent = `KI (${found.split('/').pop()}) erstellt Eisbrecher...`;
+            // 3. KI-Generierung
+            status.textContent = `Nutze ${chosenModel.displayName || chosenModel.name.split('/').pop()}...`;
             
-            const prompt = `Du bist ein Kommunikationsexperte für positive Nachrichten. 
-            Hier sind aktuelle Meldungen von GoodNews.eu:
-            ${headlines}
-            
-            Wähle die 3 spannendsten Themen aus und erstelle daraus sympathische Small-Talk Eisbrecher.
-            Antworte STRENG NUR als JSON-Array in diesem Format: 
-            [{"category": "THEMA", "title": "Einstiegssatz", "explanation": "Hintergrund-Info"}]`;
+            const prompt = `Erstelle aus diesen positiven News 3-4 sympathische Small-Talk Eisbrecher. 
+            Antworte nur als JSON: [{"category": "TAG", "title": "SATZ", "explanation": "INFO"}] \n\nNews:\n${headlines}`;
 
             const aiRes = await fetch(modelUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.85 }
-                })
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
 
             const aiData = await aiRes.json();
-            
             if (aiData.error) throw new Error(aiData.error.message);
-            if (!aiData.candidates || aiData.candidates.length === 0) throw new Error("KI hat keine Antwort geliefert (Sicherheitsfilter).");
 
             const rawText = aiData.candidates[0].content.parts[0].text;
-            const jsonStart = rawText.indexOf('[');
-            const jsonEnd = rawText.lastIndexOf(']') + 1;
-            const icebreakers = JSON.parse(rawText.substring(jsonStart, jsonEnd));
+            const jsonStr = rawText.substring(rawText.indexOf('['), rawText.lastIndexOf(']') + 1);
+            const icebreakers = JSON.parse(jsonStr);
 
-            // Ergebnisse anzeigen
             status.style.display = 'none';
             icebreakers.forEach((item, index) => {
                 setTimeout(() => {
                     const div = document.createElement('div');
                     div.className = 'card';
-                    div.innerHTML = `
-                        <span class="tag">${item.category}</span>
-                        <h3>${item.title}</h3>
-                        <p>${item.explanation}</p>
-                    `;
+                    div.innerHTML = `<span class="tag">${item.category}</span><h3>${item.title}</h3><p>${item.explanation}</p>`;
                     div.style.animationDelay = `${index * 0.1}s`;
                     resultsDiv.appendChild(div);
                 }, index * 150);
             });
 
         } catch (err) {
-            status.innerHTML = `<div style="background: rgba(252, 165, 165, 0.1); border: 1px solid #ef4444; padding: 15px; border-radius: 12px; color: #fca5a5;">
-                <strong>Fehler:</strong> ${err.message}
-            </div>`;
+            status.innerHTML = `<div style="border:1px solid #ef4444; padding:15px; border-radius:12px; color:#fca5a5;"><strong>Fehler:</strong> ${err.message}</div>`;
         }
     }
 
